@@ -1,0 +1,6 @@
+{
+    "board": "Moteino:samd:currentranger_m0",
+    "configuration": "crystal=external,usbstack=arduino,debug=off",
+    "port": "/dev/ttyACM0",
+    "sketch": "CurrentRanger_R3.ino"
+}
