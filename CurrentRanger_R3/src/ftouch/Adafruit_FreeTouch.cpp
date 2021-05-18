@@ -108,8 +108,10 @@ uint16_t Adafruit_FreeTouch::measure(void) {
   uint16_t m;
 
   m = measureRaw();
-  if (m == -1)
-    return -1;
+
+// useless since m is uint  
+//  if (m == -1)
+//    return -1;
 
   // normalize the signal
   switch (config.oversample) {
