@@ -1,0 +1,14 @@
+BasedOnStyle: LLVM
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 0
+IndentWidth: 4
+SortIncludes: false
+AccessModifierOffset: -4
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveMacros: true
+AlignEscapedNewlines: Left
+AllowShortFunctionsOnASingleLine: Inline
+PointerAlignment: Right
+IndentPPDirectives: BeforeHash
