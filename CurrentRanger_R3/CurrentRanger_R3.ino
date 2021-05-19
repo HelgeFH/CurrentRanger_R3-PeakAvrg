@@ -57,15 +57,36 @@
 #define ADC_CALIBRATE_FORCED_GAIN   2048
 #define LDO_DEFAULT                 3.300 //volts, change to actual LDO output (measure GND-3V on OLED header)
 //***********************************************************************************************************
-#define BUZZER    1 // BUZZER pin
-#define NOTE_C5   523
-#define NOTE_D5   587
-#define NOTE_E5   659
-#define NOTE_F5   698
-#define NOTE_G5   784
-#define NOTE_B5   988
-#define NOTE_C6   1047
-#define TONE_BEEP 4200
+#define BUZZER    1       // BUZZER pin
+#define NOTE_OFF  0       // this works for tune()
+#define NOTE_C7   2093    // 2093.00 ->  0.0%
+#define NOTE_Cs7  2217    // 2217.46 -> −0.0207%
+#define NOTE_D7   2349    // 2349.32 -> −0.0136%
+#define NOTE_Ds7  2489    // 2489.02 -> −0.0008%
+#define NOTE_E7   2637    // 2637.02 -> −0.0008%
+#define NOTE_F7   2794    // 2793.83 ->  0.0061%
+#define NOTE_Fs7  2960    // 2959.96 ->  0.0014%
+#define NOTE_G7   3136    // 3135.96 ->  0.0013%
+#define NOTE_Gs7  3322    // 3322.44 -> −0.0132%
+#define NOTE_A7   3520    // 3520.00 ->  0.0%
+#define NOTE_As7  3729    // 3729.31 -> −0.0083%
+#define NOTE_B7   3951    // 3951.07 -> −0.0018%
+#define NOTE_C8   4186    // 4186.01 -> −0.0002%
+#define NOTE_Cs8  4435    // 4434.92 ->  0.0018%
+#define NOTE_D8   4699    // 4698.63 ->  0.0079%
+#define NOTE_Ds8  4978    // 4978.03 -> −0.0006%
+#define NOTE_E8   5274    // 5274.04 -> −0.0008%
+#define NOTE_F8   5588    // 5587.65 ->  0.0063%
+#define NOTE_Fs8  5920    // 5919.91 ->  0.0015%
+#define NOTE_G8   6272    // 6271.93 ->  0.0011%
+#define NOTE_Gs8  6645    // 6644.88 ->  0.0018%
+#define NOTE_A8   7040    // 7040.00 ->  0.0%
+#define NOTE_As8  7459    // 7458.62 ->  0.0051%
+#define NOTE_B8   7902    // 7902.13 -> −0.0016%
+#define NOTE_C9   8372    // 8372.02 -> −0.0002%
+#define NOTE_Cs9  8870    // 8869.84 ->  0.0018%
+#define NOTE_D9   9397    // 9397.26 -> −0.0028%
+#define TONE_BEEP NOTE_C8 // default buzz frequency
 //***********************************************************************************************************
 #define MODE_MANUAL                 0
 #define MODE_AUTORANGE              1
@@ -145,13 +166,20 @@ FlashStorage(eeprom_ADCSAMPLINGSPEED, uint8_t);
 void setup() {
     /*
     //some buzz
-    tone(BUZZER, NOTE_C5); delay(100);
-    tone(BUZZER, NOTE_E5); delay(100);
-    tone(BUZZER, NOTE_G5); delay(100);
-    tone(BUZZER, NOTE_C6); delay(200);
+    tone(BUZZER, NOTE_C7); delay(100);
+    tone(BUZZER, NOTE_E7); delay(100);
+    tone(BUZZER, NOTE_G7); delay(100);
+    tone(BUZZER, NOTE_C8); delay(200);
     noTone(BUZZER);        delay(50);
-    tone(BUZZER, NOTE_G5); delay(100);
-    tone(BUZZER, NOTE_C6); delay(400);
+    tone(BUZZER, NOTE_G7); delay(100);
+    tone(BUZZER, NOTE_C8); delay(400);
+    noTone(BUZZER);
+
+    // range-test
+    for (float f = 2200; f < 8800; f *= 1.059463094) {
+        tone(BUZZER, f + 0.5);
+        delay(200);
+    }
     noTone(BUZZER);
     */
 
@@ -250,7 +278,23 @@ void setup() {
         u8g2.setCursor(64, 56);
         u8g2.print(FW_VERSION);
         u8g2.sendBuffer();
-        delay(2000);
+        //delay(2000);
+        // buzzbadinerie
+        const uint16_t notes[] = {
+            NOTE_B8, 8, NOTE_D9, 4, NOTE_B8, 4,
+            NOTE_Fs8, 8, NOTE_B8, 4, NOTE_Fs8, 4, NOTE_D8, 8, NOTE_Fs8, 4, NOTE_D8, 4,
+            NOTE_B7, 16, NOTE_Fs7, 4, NOTE_B7, 4, NOTE_D8, 4, NOTE_B7, 4,
+            NOTE_Cs8, 4, NOTE_B7, 4, NOTE_Cs8, 4, NOTE_B7, 4, NOTE_As7, 4, NOTE_Cs8, 4, NOTE_E8, 4, NOTE_Cs8, 4,
+            NOTE_D8, 8, NOTE_B7, 8,
+            NOTE_OFF, 0};
+
+        for (unsigned int i = 0; i < (sizeof(notes) / sizeof(notes[0])); i += 2) {
+            float trsp = 0.5;
+            float frq  = notes[0 + i] * trsp;
+            int len    = notes[1 + i];
+            tone(BUZZER, frq + 0.5, len * 23);
+            delay(len * 32);
+        }
     }
 
 #ifdef BT_SERIAL_EN
@@ -485,13 +529,21 @@ void loop() {
         if (LOGGING_FORMAT == LOGGING_FORMAT_EXPONENT) {
             Serial.print(VOUT);
             Serial.print("e");
-            Serial.println(RANGE_NA ? -9 : RANGE_UA ? -6 : -3);
+            Serial.println(RANGE_NA   ? -9
+                           : RANGE_UA ? -6
+                                      : -3);
         } else if (LOGGING_FORMAT == LOGGING_FORMAT_NANOS)
-            Serial.println(VOUT * (RANGE_NA ? 1 : RANGE_UA ? 1000 : 1000000));
+            Serial.println(VOUT * (RANGE_NA   ? 1
+                                   : RANGE_UA ? 1000
+                                              : 1000000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MICROS)
-            Serial.println(VOUT * (RANGE_NA ? 0.001 : RANGE_UA ? 1 : 1000));
+            Serial.println(VOUT * (RANGE_NA   ? 0.001
+                                   : RANGE_UA ? 1
+                                              : 1000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MILLIS)
-            Serial.println(VOUT * (RANGE_NA ? 0.000001 : RANGE_UA ? 0.001 : 1));
+            Serial.println(VOUT * (RANGE_NA   ? 0.000001
+                                   : RANGE_UA ? 0.001
+                                              : 1));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_ADC)
             Serial.println(readDiff, 0);
     }
@@ -513,13 +565,21 @@ void loop() {
         if (LOGGING_FORMAT == LOGGING_FORMAT_EXPONENT) {
             SerialBT.print(VOUT);
             SerialBT.print("e");
-            SerialBT.println(RANGE_NA ? -9 : RANGE_UA ? -6 : -3);
+            SerialBT.println(RANGE_NA   ? -9
+                             : RANGE_UA ? -6
+                                        : -3);
         } else if (LOGGING_FORMAT == LOGGING_FORMAT_NANOS)
-            SerialBT.println(VOUT * (RANGE_NA ? 1 : RANGE_UA ? 1000 : 1000000));
+            SerialBT.println(VOUT * (RANGE_NA   ? 1
+                                     : RANGE_UA ? 1000
+                                                : 1000000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MICROS)
-            SerialBT.println(VOUT * (RANGE_NA ? 0.001 : RANGE_UA ? 1 : 1000));
+            SerialBT.println(VOUT * (RANGE_NA   ? 0.001
+                                     : RANGE_UA ? 1
+                                                : 1000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MILLIS)
-            SerialBT.println(VOUT * (RANGE_NA ? 0.000001 : RANGE_UA ? 0.001 : 1));
+            SerialBT.println(VOUT * (RANGE_NA   ? 0.000001
+                                     : RANGE_UA ? 0.001
+                                                : 1));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_ADC)
             SerialBT.println(readDiff, 0);
     }
@@ -579,6 +639,7 @@ void loop() {
         if ((!BIAS && readDiff > ADC_OVERLOAD) || (BIAS && abs(readDiff) > ADC_OVERLOAD / 2)) {
             u8g2.setFont(u8g2_font_9x15B_tf);
             u8g2.drawStr(0, 28, "OVERLOAD!");
+            tone(BUZZER, NOTE_A7, 30);
         }
         u8g2.sendBuffer();
     }
@@ -622,11 +683,11 @@ void handleTouchPads() {
         return;
 
     if (TOUCH_DEBUG_ENABLED) {
-        Serial.print(qt[2].measure());
+        Serial.print(qt[0].measure());
         Serial.print('\t');
         Serial.print(qt[1].measure());
         Serial.print('\t');
-        Serial.println(qt[0].measure());
+        Serial.println(qt[2].measure());
     }
 
     bool MA_PRESSED = qt[2].measure() > TOUCH_HIGH_THRESHOLD;
@@ -653,14 +714,16 @@ void handleTouchPads() {
         }
     }
 
-    //LPF activation --- [NA+UA]
-    if (UA_PRESSED && NA_PRESSED && !MA_PRESSED && millis() - lpfInterval > 1000) {
+    //LPF activation --- [MA+UA]
+    //  -> both rightmost pads activate right-located feature LPF
+    if (UA_PRESSED && !NA_PRESSED && MA_PRESSED && millis() - lpfInterval > 1000) {
         toggleLPF();
         Beep(3, false);
     }
 
-    //offset toggling (GNDISO to half supply) --- [MA+UA]
-    if (MA_PRESSED && UA_PRESSED && !NA_PRESSED && millis() - offsetInterval > 1000) {
+    //offset toggling (GNDISO to half supply) --- [NA+UA]
+    //  -> both leftmost pads activate left-located feature BIAS
+    if (!MA_PRESSED && UA_PRESSED && NA_PRESSED && millis() - offsetInterval > 1000) {
         toggleOffset();
         Beep(3, false);
     }
@@ -740,7 +803,7 @@ void handleAutoOff() {
             autoffBuzz          = !autoffBuzz;
 
             if (autoffBuzz)
-                tone(BUZZER, NOTE_B5);
+                tone(BUZZER, NOTE_B7);
             else
                 noTone(BUZZER);
         }
@@ -978,11 +1041,11 @@ void analogReadCorrection(int offset, uint16_t gain) {
 }
 
 void rangeBeep(uint16_t switch_delay) {
-    uint16_t freq = NOTE_C5;
+    uint16_t freq = NOTE_C7;
     if (RANGE_UA)
-        freq = NOTE_D5;
+        freq = NOTE_D7;
     if (RANGE_MA)
-        freq = NOTE_E5;
+        freq = NOTE_E7;
     tone(BUZZER, freq, switch_delay ? switch_delay : 20);
 }
 
