@@ -99,7 +99,7 @@
 #include <Wire.h>                     //i2c scanner: https://playground.arduino.cc/Main/I2cScanner
 #define OLED_BAUD             1600000 //fast i2c clock
 #define OLED_ADDRESS          0x3C    //i2c address on most small OLEDs
-#define OLED_REFRESH_INTERVAL 180     //ms
+#define OLED_REFRESH_INTERVAL 250     //ms
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 //***********************************************************************************************************
 #define TOUCH_N 8
@@ -227,7 +227,7 @@ void setup() {
 
     autooff_interval = eeprom_AUTOFF.read();
     if (autooff_interval == 0) {
-        autooff_interval = AUTOOFF_DEFAULT;
+        autooff_interval = AUTOOFF_SMART;
         eeprom_AUTOFF.write(autooff_interval);
     }
 
@@ -337,10 +337,12 @@ void setup() {
     WDTset();
     if (STARTUP_MODE == MODE_AUTORANGE)
         toggleAutoranging();
+    toggleLPF();
 }
 
 uint32_t oledInterval = 0, lpfInterval = 0, offsetInterval = 0, autorangeInterval = 0, btInterval = 0,
-         autoOffBuzzInterval = 0, touchSampleInterval = 0, lastKeepAlive = 0, vbatInterval = VBAT_REFRESH_INTERVAL;
+         autoOffBuzzInterval = 0, autoOffRemain = AUTOOFF_DEFAULT,
+         touchSampleInterval = 0, lastKeepAlive = 0, vbatInterval = 0;
 byte LPF = 0, BIAS = 0, AUTORANGE = 0;
 float vbat = 0, VOUT = 0;
 float read1 = 0, read2 = 0, readDiff = 0;
@@ -350,7 +352,10 @@ bool rangeSwitched = false;
 #define RANGE_NA rangeUnit == 'n'
 
 void loop() {
-    //uint32_t timestamp=micros();
+    // static uint32_t timestamp = 0, oldstamp;
+    // oldstamp  = timestamp;
+    // timestamp = micros();
+
     while (Serial.available() > 0) {
         char inByte = Serial.read();
 
@@ -529,31 +534,29 @@ void loop() {
         if (LOGGING_FORMAT == LOGGING_FORMAT_EXPONENT) {
             Serial.print(VOUT);
             Serial.print("e");
-            Serial.println(RANGE_NA   ? -9
-                           : RANGE_UA ? -6
-                                      : -3);
+            Serial.println(RANGE_NA ? -9
+                                    : RANGE_UA ? -6
+                                               : -3);
         } else if (LOGGING_FORMAT == LOGGING_FORMAT_NANOS)
-            Serial.println(VOUT * (RANGE_NA   ? 1
-                                   : RANGE_UA ? 1000
-                                              : 1000000));
+            Serial.println(VOUT * (RANGE_NA ? 1
+                                            : RANGE_UA ? 1000
+                                                       : 1000000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MICROS)
-            Serial.println(VOUT * (RANGE_NA   ? 0.001
-                                   : RANGE_UA ? 1
-                                              : 1000));
+            Serial.println(VOUT * (RANGE_NA ? 0.001
+                                            : RANGE_UA ? 1
+                                                       : 1000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MILLIS)
-            Serial.println(VOUT * (RANGE_NA   ? 0.000001
-                                   : RANGE_UA ? 0.001
-                                              : 1));
+            Serial.println(VOUT * (RANGE_NA ? 0.000001
+                                            : RANGE_UA ? 0.001
+                                                       : 1));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_ADC)
             Serial.println(readDiff, 0);
     }
 
+    bool showBt = false;
 #ifdef BT_SERIAL_EN
     if (BT_LOGGING_ENABLED) {
-        if (OLED_found) {
-            u8g2.setFont(u8g2_font_siji_t_6x10); //https://github.com/olikraus/u8g2/wiki/fntgrpsiji
-            u8g2.drawGlyph(104, 10, 0xE00B);     //BT icon
-        }
+        showBt = true;
 
         btInterval = millis();
         if (!AUTORANGE)
@@ -565,21 +568,21 @@ void loop() {
         if (LOGGING_FORMAT == LOGGING_FORMAT_EXPONENT) {
             SerialBT.print(VOUT);
             SerialBT.print("e");
-            SerialBT.println(RANGE_NA   ? -9
-                             : RANGE_UA ? -6
-                                        : -3);
+            SerialBT.println(RANGE_NA ? -9
+                                      : RANGE_UA ? -6
+                                                 : -3);
         } else if (LOGGING_FORMAT == LOGGING_FORMAT_NANOS)
-            SerialBT.println(VOUT * (RANGE_NA   ? 1
-                                     : RANGE_UA ? 1000
-                                                : 1000000));
+            SerialBT.println(VOUT * (RANGE_NA ? 1
+                                              : RANGE_UA ? 1000
+                                                         : 1000000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MICROS)
-            SerialBT.println(VOUT * (RANGE_NA   ? 0.001
-                                     : RANGE_UA ? 1
-                                                : 1000));
+            SerialBT.println(VOUT * (RANGE_NA ? 0.001
+                                              : RANGE_UA ? 1
+                                                         : 1000));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_MILLIS)
-            SerialBT.println(VOUT * (RANGE_NA   ? 0.000001
-                                     : RANGE_UA ? 0.001
-                                                : 1));
+            SerialBT.println(VOUT * (RANGE_NA ? 0.000001
+                                              : RANGE_UA ? 0.001
+                                                         : 1));
         else if (LOGGING_FORMAT == LOGGING_FORMAT_ADC)
             SerialBT.println(readDiff, 0);
     }
@@ -588,17 +591,21 @@ void loop() {
     //OLED refresh: ~22ms (SCK:1.6mhz, ADC:64samples/DIV16/b111)
     if (OLED_found && millis() - oledInterval > OLED_REFRESH_INTERVAL) //refresh rate (ms)
     {
+        String txt;
+
         oledInterval = millis();
         if (!AUTORANGE)
             readVOUT();
         if (!VOUTCalculated)
             VOUT = readDiff * ldoOptimized * (BIAS ? 1 : OUTPUT_CALIB_FACTOR);
-        u8g2.clearBuffer();              //175us
-        u8g2.setFont(u8g2_font_6x12_tf); //7us
+        u8g2.clearBuffer(); //175us
 
         handleVbatRead();
 
+        // BT and battery symbol
         u8g2.setFont(u8g2_font_siji_t_6x10);
+        if (showBt)
+            u8g2.drawGlyph(104, 10, 0xE00B); //BT icon
         if (vbat > 4.3)
             u8g2.drawGlyph(115, 10, 0xE23A); //charging!
         else if (vbat > 4.1)
@@ -616,29 +623,40 @@ void loop() {
         else
             u8g2.drawGlyph(115, 10, 0xE242); //u8g2.drawStr(88,12,"LoBat!");
 
+        // headline
         u8g2.setFont(u8g2_font_6x12_tf); //7us
-        if (AUTORANGE) {
-            u8g2.drawStr(0, 12, analog_ref_half ? "AUTO\xb7\xbd" : "AUTO");
-            u8g2.setCursor(42, 12);
-            u8g2.print(readDiff, 0);
-        } else {
-            if (analog_ref_half)
-                u8g2.drawStr(0, 12, "\xbd");
-            u8g2.setCursor(12, 12);
-            u8g2.print(readDiff, 0);
-        }
 
+        // ADC debug val
+        txt = (analog_ref_half) ? "\xbd " : "  ";
+        txt += String(readDiff, 0);
+        u8g2.drawStr(28, 10, txt.c_str());
+
+        // auto-range mode, auto-off remaining and warning
+        if (AUTORANGE)
+            u8g2.drawStr(0, 10, "AUTO");
+        else
+            u8g2.drawStr(0, 10, "MANU");
+        txt = (autoOffRemain != AUTOOFF_DISABLED)
+                  ? String(autoOffRemain) + "s"
+                  : "";
         if (autoffBuzz)
-            u8g2.drawStr(5, 26, "* AUTO OFF! *"); //autoffWarning
-        u8g2.setFont(u8g2_font_helvB24_te);
-        u8g2.setCursor(RANGE_MA ? 102 : 106, RANGE_UA ? 55 : 60);
-        u8g2.print(RANGE_UA ? '\xb5' : rangeUnit);
+            txt = "<" + txt + ">";
+        else
+            txt = " " + txt + " ";
+        u8g2.drawStr(72 + 6 * (5 - txt.length()), 10, txt.c_str());
+
+        // value
         u8g2.setFont(u8g2_font_logisoso32_tr);
-        u8g2.setCursor(0, 64);
-        u8g2.print(((BIAS && abs(VOUT) >= 0.4) || (!BIAS && VOUT >= 0.4)) ? VOUT : 0, abs(VOUT) >= 1000 ? 0 : 1);
+        txt = String(((BIAS && abs(VOUT) >= 0.4) || (!BIAS && VOUT >= 0.4)) ? VOUT : 0, abs(VOUT) >= 1000 ? 0 : 1);
+        if (abs(VOUT) >= 1000)
+            txt += " ";
+        u8g2.drawStr(5 + 20 * (6 - txt.length()), 64, txt.c_str());
+
+        u8g2.setFont(u8g2_font_9x15B_tf);
+        txt = String(RANGE_UA ? '\xb5' : rangeUnit) + "A";
+        u8g2.drawStr(110, 25, txt.c_str());
         if ((!BIAS && readDiff > ADC_OVERLOAD) || (BIAS && abs(readDiff) > ADC_OVERLOAD / 2)) {
-            u8g2.setFont(u8g2_font_9x15B_tf);
-            u8g2.drawStr(0, 28, "OVERLOAD!");
+            u8g2.drawStr(10, 27, "OVERLOAD!");
             tone(BUZZER, NOTE_A7, 30);
         }
         u8g2.sendBuffer();
@@ -647,15 +665,17 @@ void loop() {
     WDTclear();
     handleTouchPads(); //~112uS
     handleAutoOff();
-    //Serial.println(micros()-timestamp);
+
+    // String dbug = "T=" + String(timestamp - oldstamp) + " t=" + String(micros() - timestamp);
+    // Serial.println(dbug.c_str());
 } //loop()
 
 void handleVbatRead() {
     //limit how often we read the battery since it's not expected to change a lot
-    if (millis() - vbatInterval < VBAT_REFRESH_INTERVAL)
+    if (millis() < vbatInterval)
         return;
     else
-        vbatInterval = millis();
+        vbatInterval = millis() + VBAT_REFRESH_INTERVAL;
     uint8_t half = analog_ref_half;
     if (half)
         analogReferenceHalf(false);
@@ -678,6 +698,7 @@ void handleVbatRead() {
 }
 
 uint16_t valM = 0, valU = 0, valN = 0;
+uint32_t tpAlive = 0;
 void handleTouchPads() {
     if (millis() - touchSampleInterval < TOUCH_SAMPLE_INTERVAL)
         return;
@@ -697,20 +718,44 @@ void handleTouchPads() {
     touchSampleInterval = millis();
     if (MA_PRESSED || UA_PRESSED || NA_PRESSED)
         lastKeepAlive = millis();
+    else
+        tpAlive = 0;
 
     //range switching
     if (!AUTORANGE) {
-        if (MA_PRESSED && !UA_PRESSED && !NA_PRESSED && rangeUnit != 'm') {
-            rangeMA();
-            rangeBeep(20);
+        if (MA_PRESSED && !UA_PRESSED && !NA_PRESSED) {
+            if (!tpAlive)
+                tpAlive = millis();
+            if (rangeUnit != 'm') {
+                rangeMA();
+                rangeBeep(20);
+            } else if (tpAlive && millis() - tpAlive > 2000) {
+                autooff_interval = AUTOOFF_DISABLED;
+                rangeBeep(20);
+                tpAlive = 0;
+            }
         }
-        if (UA_PRESSED && !MA_PRESSED && !NA_PRESSED && rangeUnit != 'u') {
-            rangeUA();
-            rangeBeep(20);
+        if (UA_PRESSED && !MA_PRESSED && !NA_PRESSED) {
+            if (!tpAlive)
+                tpAlive = millis();
+            if (rangeUnit != 'u') {
+                rangeUA();
+                rangeBeep(20);
+            } else if (tpAlive && millis() - tpAlive > 2000) {
+                tpAlive = 0;
+            }
         }
-        if (NA_PRESSED && !UA_PRESSED && !MA_PRESSED && rangeUnit != 'n') {
-            rangeNA();
-            rangeBeep(20);
+        if (NA_PRESSED && !UA_PRESSED && !MA_PRESSED) {
+            if (!tpAlive)
+                tpAlive = millis();
+            if (rangeUnit != 'n') {
+                rangeNA();
+                rangeBeep(20);
+            } else if (tpAlive && millis() - tpAlive > 2000) {
+                autooff_interval = AUTOOFF_DEFAULT;
+                rangeBeep(20);
+                tpAlive = 0;
+            }
         }
     }
 
@@ -789,11 +834,16 @@ void rangeNA() {
 }
 
 void handleAutoOff() {
-    uint32_t autooff_deadline = ((autooff_interval == AUTOOFF_SMART &&
-                                  !(USB_LOGGING_ENABLED || BT_LOGGING_ENABLED))
-                                     ? AUTOOFF_DEFAULT
-                                     : autooff_interval) *
-                                1000;
+    uint32_t autooff_deadline = AUTOOFF_DEFAULT * 1000;
+
+    autoOffRemain = (500 + autooff_deadline - (millis() - lastKeepAlive)) / 1000;
+
+    if (autooff_interval == AUTOOFF_DISABLED ||
+        (autooff_interval == AUTOOFF_SMART &&
+         (USB_LOGGING_ENABLED || BT_LOGGING_ENABLED))) {
+        lastKeepAlive = millis();
+        autoOffRemain = AUTOOFF_DISABLED;
+    }
 
     if (millis() - lastKeepAlive > autooff_deadline - 5 * 1000) {
         autoffWarning = true;
@@ -811,6 +861,8 @@ void handleAutoOff() {
         if (millis() - lastKeepAlive > autooff_deadline) {
             pinMode(AUTOFF, OUTPUT);
             digitalWrite(AUTOFF, LOW);
+            while (1)
+                WDTclear();
         }
     } else if (autoffWarning) {
         autoffWarning = autoffBuzz = false;
