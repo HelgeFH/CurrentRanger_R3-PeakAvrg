@@ -1,27 +1,21 @@
-﻿#What?
+﻿# What?
 
 This is a modified firmware for <a href="https://github.com/LowPowerLab/CurrentRanger"> LowPowerLab's</a> **CurrentRanger_R3** with an attached OLED display:
 
 
 <table>
-  <style>
-      td {
-        padding: 0px;
-        border: 0px;
-      }
-  </style>
   <tr>
     <td>
       <a href="https://github.com/LowPowerLab/CurrentRanger">
-      <img src="https://camo.githubusercontent.com/bda8f2dddc8bc84b77eedff4c957be9ededc4cde052540a1907f9aef249d6a55/68747470733a2f2f6c6f77706f7765726c61622e636f6d2f77702d636f6e74656e742f75706c6f6164732f323031382f30392f43757272656e745f52616e6765725f52335f4f4c45442e6a7067" width=270> </a>
+      <img src="https://camo.githubusercontent.com/bda8f2dddc8bc84b77eedff4c957be9ededc4cde052540a1907f9aef249d6a55/68747470733a2f2f6c6f77706f7765726c61622e636f6d2f77702d636f6e74656e742f75706c6f6164732f323031382f30392f43757272656e745f52616e6765725f52335f4f4c45442e6a7067" width=270 height=200> </a>
     </td>
     <td>
       <a href="Pix/CurrentRanger_R3_PCBB.jpg">
-      <img src="Pix/CurrentRanger_R3_PCBB.jpg" height=200> </a>
+      <img src="Pix/CurrentRanger_R3_PCBB.jpg" width=318 height=200> </a>
     </td>
     <td>
       <a href="Pix/CurrentRanger_R3_PCBT.jpg">
-      <img src="Pix/CurrentRanger_R3_PCBT.jpg" height=200> </a>
+      <img src="Pix/CurrentRanger_R3_PCBT.jpg" width=318 height=200> </a>
     </td>
   </tr>
 </table>
@@ -33,7 +27,7 @@ This project is also modified to be compiled with either standard Arduino-IDE or
 
 
 ---
-#Operation
+# Operation
 
 Focus lies on standalone usage, so some parameters that were stored in NVM or were accessible mainly via the UART have changed.
 
@@ -58,29 +52,29 @@ Touching `nA` selects the averaging mode and `AVRG` is shown at the top line on 
 Note that switching `MANU`<>`AUTO` resets peak hold and averaging values as well.
 
 ---
-#Calibration
+# Calibration
 
 Once a firmware is flashed, unfortunately the actual calibration data is lost. However, it makes sense to re-calibrate for this firmware anyways. Once calibrated you can type letter `c` at the serial console (via USB) to receive an easily replayable calibration data string (e.g. `:918:734:0.994:3.296:0:0`). Save that string and replay it followed by **newline** after updating the firmware. This restores the calibration data.
 
-###Step 1
+### Step 1
 
 After five minutes warm-up time measure the LDO voltage (3.3V nominal) accessible on the lower right pin pads. Access UART via USB and adjust the LDO value by typing `<` and `>`.
 
-###Step 2
+### Step 2
 
 Short input, select `mA` range, **disable** `BIAS` and adjust offset by typing `{` and `}` until displayed value goes positve. Adjust now for toggling -0.0 and 0.0 to best offset. Check ranges `µA` and `nA` for same result. This offset is same for all three un-BIASed ranges.
 
-###Step 3
+### Step 3
 
 With still shorted input, select `mA` range, **enable** `BIAS` and adjust offset by typing `{` and `}` until displayed value is toggling between -0.0 and 0.0 as best offset. Check ranges `µA` and `nA` for same result. This offset is same for all three BIASed ranges.
 
-###Step 4
+### Step 4
 
 Drive 1mA current through the unit, select `µA` range and disable `BIAS`. Now adjust display value with `[` and `]` to 1000µA.
 
 ---
 
-#Caveats
+# Caveats
 
 * Unfortunately it is not clear whether the UF2 bootloader is a stock or modified one. This would be a good opportunity to provide some NVM-area for calibration data that will survive a firmware update.
 
