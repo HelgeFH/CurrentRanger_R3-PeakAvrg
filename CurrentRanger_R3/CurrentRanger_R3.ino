@@ -20,7 +20,7 @@
 //#include <ATSAMD21_ADC.h>
 
 // CurrentRanger Firmware Version
-#define FW_VERSION "1.2.1"
+#define FW_VERSION "1.3.0"
 
 //***********************************************************************************************************
 #define BIAS_LED 11
@@ -145,6 +145,8 @@ uint32_t ADC_AVGCTRL;
 uint8_t OLED_found    = false;
 uint8_t autoffWarning = false;
 uint8_t autoffBuzz    = 0;
+int8_t tpAll          = 0;
+
 #ifdef BT_SERIAL_EN
 uint8_t BT_found = false;
 #endif
@@ -245,6 +247,15 @@ void setup() {
     }
     ldoOptimizeRefresh();
 
+    // check all touched for entering bootloader
+    for (int i = 0; i < 10; i++) {
+        tpAll = 0;
+        while (!tpAll)
+            handleTouchPads();
+    }
+    if (tpAll == 1)
+        rebootIntoBootloader();
+
     if (OLED_found) {
         bootScreen();
 #if 1
@@ -318,7 +329,7 @@ uint32_t lpfInterval = 0, offsetInterval = 0, autorangeInterval = 0, btInterval 
          touchSampleInterval = 0, lastKeepAlive = 0, vBatInterval = 0, oledInterval = 0;
 bool LPF = 0, BIAS = 0, AUTORANGE = 0;
 
-uint8_t extraMode = 0; // AUTO extra mode, 0=normal, 1=PEAK, 2=AVRG
+uint8_t extraMode = 0; // AUTO extra mode, 0=normal, 1=PEAK, 2=AVRG-I, 3=AVRG-C
 
 uint8_t adcRange; // 0=nA, 1=uA, 2=mA
 float vBat = 0, vAdc, vCor;
@@ -462,7 +473,7 @@ void loop() {
         oledSum = 0;
         oledcnt = 0;
 
-        // extramode-2 AVRG long term averaging
+        // extramode-2+3 AVRG long term averaging
         voutSumEx2 += oledVal;
         voutCntEx2++;
 
@@ -744,6 +755,7 @@ void handleOLED(void) {
 
     String txt;
     uint8_t showRange = adcRange;
+    char showChrge    = 0;
     float showVal     = oledVal;
     bool showTwo      = false;
 
@@ -779,45 +791,27 @@ void handleOLED(void) {
         if (extraMode == 1) {
             u8g2.drawStr(34, 10, "PEAK");
             showVal = voutPkhEx1;
-        } else if (extraMode == 2) {
+        } else if (extraMode == 2 || extraMode == 3) {
             u8g2.drawStr(34, 10, "AVRG");
             showVal = voutCntEx2 ? (voutSumEx2 / voutCntEx2) : 0.;
         }
-        if (true) {
-            if (abs(showVal) > 10000000.) {
-                showRange = 2;
-            } else if (abs(showVal) > 1000000.) {
-                showTwo   = true;
-                showRange = 2;
-            } else if (abs(showVal) > 10000.) {
-                showRange = 1;
-            } else if (abs(showVal) > 1000.) {
-                showTwo   = true;
-                showRange = 1;
-            } else {
-                showRange = 0;
-            }
+
+        if (abs(showVal) > 10000000.) {
+            showRange = 2;
+        } else if (abs(showVal) > 1000000.) {
+            showTwo   = true;
+            showRange = 2;
+        } else if (abs(showVal) > 10000.) {
+            showRange = 1;
+        } else if (abs(showVal) > 1000.) {
+            showTwo   = true;
+            showRange = 1;
+        } else {
+            showRange = 0;
         }
+
     } else {
         u8g2.drawStr(0, 10, "MANU");
-    }
-    txt = (autoOffRemain != AUTOOFF_DISABLED)
-              ? String(autoOffRemain) + "s"
-              : "";
-    if (autoffBuzz)
-        txt = "<" + txt + ">";
-    else
-        txt = " " + txt + " ";
-    u8g2.drawStr(72 + 6 * (5 - txt.length()), 10, txt.c_str());
-
-    u8g2.setFont(u8g2_font_9x15B_tf);
-    // range unit
-    txt = String("n\xb5m"[showRange]) + "A";
-    u8g2.drawStr(110, 25, txt.c_str());
-    // extramode-2 time
-    if (extraMode == 2) {
-        txt = String((millis() - Ex2millis) / 1000) + "s";
-        u8g2.drawStr(10 + 8 * (8 - txt.length()), 25, txt.c_str());
     }
 
     // normalise value to according range
@@ -847,6 +841,44 @@ void handleOLED(void) {
             ovload = true;
         }
     }
+
+    txt = (autoOffRemain != AUTOOFF_DISABLED)
+              ? String(autoOffRemain) + "s"
+              : "";
+    if (autoffBuzz)
+        txt = "<" + txt + ">";
+    else
+        txt = " " + txt + " ";
+    u8g2.drawStr(72 + 6 * (5 - txt.length()), 10, txt.c_str());
+
+    u8g2.setFont(u8g2_font_9x15B_tf);
+    if (AUTORANGE) {
+        // extramode-2+3 time
+        if (extraMode == 2 || extraMode == 3) {
+            txt = String((millis() - Ex2millis) / 1000) + "s";
+            u8g2.drawStr(10 + 8 * (8 - txt.length()), 25, txt.c_str());
+        }
+
+        // for extramode-3 adjust showval and additional unit
+        if (extraMode == 3) {
+            showVal *= (millis() - Ex2millis) / 1000;
+            if (abs(showVal) >= 3600) {
+                showVal /= 3600;
+                showChrge = 'h';
+                if (showVal > 9999.) {
+                    showVal = 9999.;
+                    ovload = true;
+                }
+            } else {
+                showChrge = 's';
+            }
+        }
+    }
+
+    // range unit
+    txt = String("n\xb5m"[showRange]) + "A" + String(showChrge);
+    u8g2.drawStr(101 + 9 * (3 - txt.length()), 25, txt.c_str());
+
     if (ovload) {
         u8g2.drawStr(10, 25, "OVERLOAD!");
         tone(BUZZER, NOTE_A7, 30);
@@ -875,6 +907,8 @@ void handleOLED(void) {
 uint16_t valM = 0, valU = 0, valN = 0;
 uint32_t tpAlive = 0;
 void handleTouchPads() {
+    static bool lock = false;
+
     if (millis() - touchSampleInterval < TOUCH_SAMPLE_INTERVAL)
         return;
 
@@ -891,10 +925,17 @@ void handleTouchPads() {
     bool NA_PRESSED = qt[0].measure() > TOUCH_HIGH_THRESHOLD;
 
     touchSampleInterval = millis();
-    if (MA_PRESSED || UA_PRESSED || NA_PRESSED)
+    if (MA_PRESSED && UA_PRESSED && NA_PRESSED) {
         lastKeepAlive = millis();
-    else
+        tpAll         = 1;
+        return;
+    } else if (MA_PRESSED || UA_PRESSED || NA_PRESSED) {
+        lastKeepAlive = millis();
+    } else {
         tpAlive = 0;
+        lock    = false;
+    }
+    tpAll = -1; // signal tp measured
 
     //range switching
     if (MA_PRESSED && !UA_PRESSED && !NA_PRESSED) {
@@ -938,9 +979,14 @@ void handleTouchPads() {
         if (!IS_RANGE_NA && !AUTORANGE) {
             rangeNA();
             rangeBeep(20);
-        } else if (extraMode != 2 && AUTORANGE) {
+        } else if (extraMode != 2 && AUTORANGE && !lock) {
             extraMode = 2;
             rangeBeep(20);
+            lock = true;
+        } else if (extraMode == 2 && AUTORANGE && !lock) {
+            extraMode = 3;
+            rangeBeep(20);
+            lock = true;
         } else if (tpAlive && millis() - tpAlive > 2000) {
             if (AUTORANGE) {
                 Ex2millis  = millis();
